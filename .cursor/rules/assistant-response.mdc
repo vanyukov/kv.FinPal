@@ -1,0 +1,22 @@
+---
+alwaysApply: false
+---
+
+**Response Rules**
+
+1. **Answer First, Code Second**  
+   Always respond to the question with a text explanation first (concise and to the point), and only then suggest code changes.
+
+2. **No Unrequested Code Changes**  
+   Do not make any changes to the code unless you receive an explicit request to do so.
+
+3. **Changes Require Confirmation**  
+   Propose code modifications only after obtaining the user’s consent.
+
+4. **Problem-Solving Flow**  
+   When addressing an issue:
+   - Start by explaining the root cause and possible solutions.
+   - Ask whether code changes are needed.
+   - Only after that, offer specific code modifications.
+
+# If this rule was applied, display at the beginning of the response: "Applied: assistant-response RULE ⓵"
