@@ -15,12 +15,13 @@
 
 | Компонент | Технология | Обоснование |
 |-----------|------------|-------------|
-| **Frontend** | React 18 + TypeScript | Типобезопасность, современные фичи |
+| **Frontend** | React 19 + TypeScript | Типобезопасность, современные фичи |
 | **State Management** | Zustand | Простота, производительность |
 | **UI Framework** | Material-UI | Консистентность, доступность |
 | **Роутинг** | React Router | Навигация, protected routes |
 | **Оффлайн-хранилище** |  Firebase persistence + IndexedDB | Надежное локальное хранение |
 | **Backend** | Firebase (Firestore, Functions, Auth) | Бессерверная архитектура, real-time |
+| **Валидация** | Zod | End-to-end валидация и типобезопасность |
 | **Визуализация** | Recharts | Легковесные, кастомизируемые графики |
 | **CI/CD** | GitHub Actions | Автоматизация сборки и деплоя |
 | **Мониторинг** | Sentry + Cloud Logging | Отслеживание ошибок и производительности |
@@ -171,6 +172,8 @@ sequenceDiagram
 
 ## 5. Модульная структура проекта
 
+**Roadmap:** M0 (определение структуры), M1 (базовые модули), M2 (расширение модулей)
+
 ```
 finpal/
 ├── src/
@@ -282,6 +285,8 @@ finpal/
 ```
 
 ## 6. State Management с Zustand
+
+**Roadmap:** M1 (базовые сторы), M2 (доменные сторы), M3 (расширенные сторы)
 
 ### 6.1 Доменные сторы
 
@@ -506,6 +511,8 @@ interface SyncState {
 
 ### 7.3 Security Rules
 
+**Roadmap:** M0 (базовые правила), M2 (расширенные правила для операций)
+
 ```javascript
 rules_version = '2';
 service cloud.firestore {
@@ -569,7 +576,370 @@ service cloud.firestore {
 }
 ```
 
+### 7.4 Безопасность на уровне Cloud Functions
+
+**Roadmap:** M2 (базовая валидация), M3 (расширенная безопасность)
+
+#### 7.4.1 Валидация входных данных
+
+Все Cloud Functions должны валидировать входные данные с помощью Zod перед обработкой:
+
+```typescript
+// firebase-functions/src/shared/security/inputValidator.ts
+import { z } from 'zod';
+import { logger } from '../logger';
+
+/**
+ * Валидирует входные данные Cloud Function с помощью Zod схемы.
+ * Логирует попытки невалидных запросов для аудита безопасности.
+ * @param data - Входные данные для валидации
+ * @param schema - Zod схема для валидации
+ * @param context - Контекст функции (для логирования)
+ * @returns Валидированные данные
+ * @throws {ValidationError} Если данные не прошли валидацию
+ */
+export const validateInput = <T extends z.ZodTypeAny>(
+  data: unknown,
+  schema: T,
+  context?: { functionName: string; userId?: string }
+): z.infer<T> => {
+  const result = schema.safeParse(data);
+  
+  if (!result.success) {
+    // Логируем попытку невалидного запроса
+    logger.warn('Invalid input detected', {
+      functionName: context?.functionName,
+      userId: context?.userId,
+      errors: result.error.errors,
+      input: sanitizeForLogging(data), // Удаляем чувствительные данные
+    });
+    
+    throw new ValidationError('Invalid input data', result.error);
+  }
+  
+  return result.data;
+};
+
+/**
+ * Очищает данные от чувствительной информации перед логированием.
+ */
+const sanitizeForLogging = (data: unknown): unknown => {
+  if (typeof data !== 'object' || data === null) {
+    return data;
+  }
+  
+  const sanitized = { ...data };
+  const sensitiveFields = ['password', 'token', 'secret', 'apiKey'];
+  
+  for (const field of sensitiveFields) {
+    if (field in sanitized) {
+      sanitized[field] = '[REDACTED]';
+    }
+  }
+  
+  return sanitized;
+};
+```
+
+#### 7.4.2 Защита от CSRF
+
+```typescript
+// firebase-functions/src/shared/security/csrfProtection.ts
+import { Request, Response } from 'express';
+
+/**
+ * Проверяет CSRF токен для HTTP Cloud Functions.
+ * Для Firestore triggers CSRF не требуется (внутренние вызовы).
+ */
+export const validateCSRFToken = (req: Request, res: Response, next: Function) => {
+  const token = req.headers['x-csrf-token'];
+  const sessionToken = req.cookies?.csrfToken;
+  
+  if (!token || token !== sessionToken) {
+    logger.warn('CSRF token validation failed', {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    
+    return res.status(403).json({
+      error: 'Invalid CSRF token',
+      code: 'CSRF_TOKEN_INVALID',
+    });
+  }
+  
+  next();
+};
+```
+
+#### 7.4.3 Защита от XSS
+
+```typescript
+// shared/utils/sanitization.ts
+import DOMPurify from 'dompurify';
+
+/**
+ * Очищает пользовательский ввод от потенциально опасного HTML/JavaScript.
+ * Используется перед отображением данных в UI.
+ * @param input - Пользовательский ввод
+ * @returns Очищенная строка
+ */
+export const sanitizeInput = (input: string): string => {
+  return DOMPurify.sanitize(input, {
+    ALLOWED_TAGS: [], // Запрещаем все HTML теги
+    ALLOWED_ATTR: [],
+  });
+};
+
+/**
+ * Экранирует специальные символы для безопасного использования в HTML.
+ */
+export const escapeHtml = (text: string): string => {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  };
+  
+  return text.replace(/[&<>"']/g, (m) => map[m]);
+};
+```
+
+#### 7.4.4 Управление секретами
+
+```typescript
+// firebase-functions/src/shared/config/secrets.ts
+import * as functions from 'firebase-functions';
+
+/**
+ * Получает секрет из Firebase Functions Config.
+ * Секреты настраиваются через Firebase CLI:
+ * firebase functions:secrets:set SECRET_NAME
+ * @param secretName - Имя секрета
+ * @returns Значение секрета
+ * @throws {Error} Если секрет не найден
+ */
+export const getSecret = (secretName: string): string => {
+  const secret = functions.config().secrets?.[secretName];
+  
+  if (!secret) {
+    throw new Error(`Secret ${secretName} not found`);
+  }
+  
+  return secret;
+};
+
+// Использование
+const apiKey = getSecret('EXCHANGE_RATE_API_KEY');
+```
+
+```typescript
+// app/config/env.ts (клиентская сторона)
+/**
+ * Безопасное управление переменными окружения на клиенте.
+ * Критические секреты НЕ должны быть доступны на клиенте.
+ */
+export const getFirebaseConfig = (): FirebaseConfig => {
+  // API ключи Firebase безопасны для публикации на клиенте
+  // Они защищены через Security Rules и доменные ограничения
+  return {
+    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+    // ... остальные публичные конфиги
+  };
+};
+
+// НИКОГДА не храните на клиенте:
+// - API ключи внешних сервисов
+// - Секретные ключи
+// - Приватные токены
+```
+
+#### 7.4.5 Аудит-логирование критических операций
+
+```typescript
+// firebase-functions/src/shared/security/auditLogger.ts
+import { logger } from '../logger';
+
+interface AuditEvent {
+  userId: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  metadata?: Record<string, unknown>;
+  timestamp: Date;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+/**
+ * Логирует критическое действие для аудита безопасности.
+ * Сохраняет в Firestore для долгосрочного хранения.
+ */
+export const logAuditEvent = async (event: AuditEvent): Promise<void> => {
+  // Структурированное логирование в Cloud Logging
+  logger.info('Audit event', {
+    severity: 'AUDIT',
+    userId: event.userId,
+    action: event.action,
+    resource: event.resource,
+    resourceId: event.resourceId,
+    metadata: event.metadata,
+    timestamp: event.timestamp.toISOString(),
+    ipAddress: event.ipAddress,
+    userAgent: event.userAgent,
+  });
+  
+  // Сохранение в Firestore для долгосрочного аудита
+  await admin.firestore()
+    .collection('audit_logs')
+    .add({
+      ...event,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+};
+
+// Использование в Cloud Functions
+export const syncOperation = functions.firestore
+  .document('users/{userId}/operations/{operationId}')
+  .onWrite(async (change, context) => {
+    const { userId, operationId } = context.params;
+    
+    // Аудит создания операции
+    if (change.after.exists && !change.before.exists) {
+      await logAuditEvent({
+        userId,
+        action: 'operation.created',
+        resource: 'operation',
+        resourceId: operationId,
+        metadata: {
+          type: change.after.data()?.type,
+          amount: change.after.data()?.amount,
+        },
+        timestamp: new Date(),
+      });
+    }
+    
+    // ... остальная логика
+  });
+```
+
+#### 7.4.6 Rate Limiting
+
+```typescript
+// firebase-functions/src/shared/security/rateLimiter.ts
+import { logger } from '../logger';
+
+interface RateLimitConfig {
+  maxRequests: number;
+  windowMs: number; // Окно времени в миллисекундах
+}
+
+/**
+ * Простой in-memory rate limiter для Cloud Functions.
+ * Для production рекомендуется использовать Redis или Firebase Extensions.
+ */
+class RateLimiter {
+  private requests: Map<string, number[]> = new Map();
+  
+  /**
+   * Проверяет, не превышен ли лимит запросов.
+   * @param identifier - Уникальный идентификатор (userId, IP и т.д.)
+   * @param config - Конфигурация лимита
+   * @returns true, если запрос разрешен, false если лимит превышен
+   */
+  checkLimit(identifier: string, config: RateLimitConfig): boolean {
+    const now = Date.now();
+    const userRequests = this.requests.get(identifier) || [];
+    
+    // Удаляем старые запросы вне окна
+    const recentRequests = userRequests.filter(
+      (timestamp) => now - timestamp < config.windowMs
+    );
+    
+    if (recentRequests.length >= config.maxRequests) {
+      logger.warn('Rate limit exceeded', {
+        identifier,
+        requests: recentRequests.length,
+        maxRequests: config.maxRequests,
+      });
+      return false;
+    }
+    
+    // Добавляем текущий запрос
+    recentRequests.push(now);
+    this.requests.set(identifier, recentRequests);
+    
+    return true;
+  }
+  
+  /**
+   * Очищает старые записи для экономии памяти.
+   */
+  cleanup(): void {
+    const now = Date.now();
+    for (const [identifier, requests] of this.requests.entries()) {
+      const recentRequests = requests.filter(
+        (timestamp) => now - timestamp < 60000 // 1 минута
+      );
+      
+      if (recentRequests.length === 0) {
+        this.requests.delete(identifier);
+      } else {
+        this.requests.set(identifier, recentRequests);
+      }
+    }
+  }
+}
+
+const rateLimiter = new RateLimiter();
+
+// Периодическая очистка
+setInterval(() => rateLimiter.cleanup(), 60000);
+
+/**
+ * Middleware для rate limiting в HTTP Cloud Functions.
+ */
+export const rateLimitMiddleware = (config: RateLimitConfig) => {
+  return (req: Request, res: Response, next: Function) => {
+    const identifier = req.auth?.uid || req.ip;
+    
+    if (!rateLimiter.checkLimit(identifier, config)) {
+      return res.status(429).json({
+        error: 'Too many requests',
+        code: 'RATE_LIMIT_EXCEEDED',
+        retryAfter: Math.ceil(config.windowMs / 1000),
+      });
+    }
+    
+    next();
+  };
+};
+
+// Использование
+export const createOperation = functions.https.onRequest(
+  rateLimitMiddleware({ maxRequests: 10, windowMs: 60000 }), // 10 запросов в минуту
+  async (req, res) => {
+    // ... логика создания операции
+  }
+);
+```
+
+### 7.5 Рекомендации по безопасности
+
+1. **Всегда валидируйте на сервере**: Security Rules + Cloud Functions валидация
+2. **Используйте Zod схемы**: Единый источник истины для валидации
+3. **Логируйте подозрительную активность**: Аудит критических операций
+4. **Ограничивайте доступ**: Принцип наименьших привилегий
+5. **Защищайте секреты**: Используйте Firebase Secrets, не храните в коде
+6. **Регулярно обновляйте зависимости**: Проверяйте уязвимости через `npm audit`
+7. **Мониторьте аномалии**: Настройте алерты на подозрительную активность
+
 ## 8. Cloud Functions
+
+**Roadmap:** M3 (валюты, регулярные операции), M4 (агрегация данных), M5 (бэкапы)
 
 ### 8.1 Генерация ежедневных агрегатов
 
@@ -886,6 +1256,8 @@ async function getCachedRatesWithFallback(): Promise<any> {
 
 ## 9. Оффлайн-синхронизация
 
+**Roadmap:** M1 (базовая инфраструктура), M2 (очередь синхронизации), M3 (разрешение конфликтов)
+
 ### 9.1 Очередь изменений
 
 ```typescript
@@ -1141,6 +1513,8 @@ self.addEventListener('periodicsync', (event) => {
 
 ## 10. DevOps и CI/CD
 
+**Roadmap:** M0 (настройка CI/CD), M5 (оптимизация деплоя)
+
 ### 10.1 Конфигурация GitHub Actions
 
 ```yaml
@@ -1321,6 +1695,8 @@ export const isProduction = () => getCurrentEnvironment() === 'production';
 
 ## 11. Мониторинг и алертинг
 
+**Roadmap:** M5 (настройка мониторинга и алертов)
+
 ### 11.1 Cloud Logging алерты
 
 ```yaml
@@ -1450,6 +1826,8 @@ export const useSentryErrorBoundary = () => {
 ```
 
 ## 12. Производительность и оптимизация
+
+**Roadmap:** M4 (оптимизация запросов и кеширование), M5 (финальная оптимизация производительности)
 
 ### 12.1 Стратегии кеширования
 
@@ -1638,6 +2016,8 @@ export class FirestoreOptimizer {
 
 ## 13. Резервное копирование и восстановление
 
+**Roadmap:** M5 (настройка автоматических бэкапов)
+
 ### 13.1 Cloud Function для бэкапов
 
 ```typescript
@@ -1699,7 +2079,809 @@ export const scheduledBackup = functions.pubsub
   });
 ```
 
-## 14. Документация для разработчиков
+## 14. Валидация с Zod
+
+**Roadmap:** M2 (базовая валидация), M3 (расширенная валидация для шаблонов и валют)
+
+Zod используется для end-to-end валидации данных на клиенте и в Cloud Functions, обеспечивая типобезопасность и единообразие валидации по всему приложению.
+
+### 14.1 Схемы валидации для доменных сущностей
+
+```typescript
+// shared/schemas/operation.schema.ts
+import { z } from 'zod';
+
+export const OperationTypeSchema = z.enum(['income', 'expense', 'transfer']);
+
+export const OperationSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().min(1),
+  type: OperationTypeSchema,
+  amount: z.number().positive('Сумма должна быть положительной'),
+  currency: z.string().length(3, 'Код валюты должен состоять из 3 символов'),
+  accountId: z.string().min(1, 'Необходимо указать счет'),
+  targetAccountId: z.string().uuid().optional(),
+  categoryId: z.string().min(1, 'Необходимо указать категорию'),
+  date: z.date(),
+  description: z.string().max(500, 'Описание не должно превышать 500 символов'),
+  tagIds: z.array(z.string().uuid()).max(10, 'Максимум 10 тегов'),
+  status: z.enum(['pending', 'completed', 'cancelled']),
+  version: z.number().int().nonnegative(),
+  clientVersion: z.number().int().nonnegative(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+}).refine(
+  (data) => {
+    // Для transfer обязателен targetAccountId
+    if (data.type === 'transfer' && !data.targetAccountId) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: 'Для перевода необходимо указать целевой счет',
+    path: ['targetAccountId'],
+  }
+);
+
+// DTO для создания операции (без системных полей)
+export const CreateOperationSchema = OperationSchema.omit({
+  id: true,
+  userId: true,
+  version: true,
+  clientVersion: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  date: z.union([z.date(), z.string().datetime()]), // Принимаем и Date, и ISO строку
+});
+
+// Экспорт TypeScript типов
+export type Operation = z.infer<typeof OperationSchema>;
+export type CreateOperationDto = z.infer<typeof CreateOperationSchema>;
+```
+
+```typescript
+// shared/schemas/account.schema.ts
+import { z } from 'zod';
+
+export const AccountSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().min(1),
+  name: z.string().min(1, 'Название счета обязательно').max(100, 'Название слишком длинное'),
+  currency: z.string().length(3),
+  balance: z.number(),
+  balanceValidated: z.number(),
+  balanceValidationHash: z.string(),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Неверный формат цвета'),
+  isArchived: z.boolean(),
+  lastValidation: z.date().optional(),
+  requiresCheck: z.boolean(),
+});
+
+export const CreateAccountSchema = AccountSchema.omit({
+  id: true,
+  userId: true,
+  balance: true,
+  balanceValidated: true,
+  balanceValidationHash: true,
+  lastValidation: true,
+  requiresCheck: true,
+}).extend({
+  initialBalance: z.number().default(0),
+});
+
+export type Account = z.infer<typeof AccountSchema>;
+export type CreateAccountDto = z.infer<typeof CreateAccountSchema>;
+```
+
+```typescript
+// shared/schemas/category.schema.ts
+import { z } from 'zod';
+
+export const CategorySchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string().min(1),
+  name: z.string().min(1).max(100),
+  type: z.enum(['income', 'expense', 'transfer']),
+  parentId: z.string().uuid().optional(),
+  path: z.string(), // Иерархический путь
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+  isArchived: z.boolean(),
+});
+
+export const CreateCategorySchema = CategorySchema.omit({
+  id: true,
+  userId: true,
+  path: true,
+});
+
+export type Category = z.infer<typeof CategorySchema>;
+export type CreateCategoryDto = z.infer<typeof CreateCategorySchema>;
+```
+
+### 14.2 Валидация на клиенте
+
+```typescript
+// shared/utils/validation.ts
+import { z } from 'zod';
+import { CreateOperationSchema, CreateAccountSchema } from '../schemas';
+
+/**
+ * Валидирует данные операции перед отправкой на сервер.
+ * Используется в формах создания/редактирования операций.
+ * @param data - Данные операции для валидации
+ * @returns Результат валидации с типизированными данными или ошибками
+ */
+export const validateOperation = <T extends z.infer<typeof CreateOperationSchema>>(
+  data: unknown
+): { success: true; data: T } | { success: false; errors: z.ZodError } => {
+  const result = CreateOperationSchema.safeParse(data);
+  
+  if (result.success) {
+    return { success: true, data: result.data as T };
+  }
+  
+  return { success: false, errors: result.error };
+};
+
+/**
+ * Валидирует данные счета с форматированием ошибок для UI.
+ * @param data - Данные счета
+ * @returns Объект с валидированными данными или объект ошибок по полям
+ */
+export const validateAccount = (data: unknown) => {
+  const result = CreateAccountSchema.safeParse(data);
+  
+  if (result.success) {
+    return { success: true, data: result.data };
+  }
+  
+  // Форматируем ошибки для отображения в форме
+  const fieldErrors: Record<string, string> = {};
+  result.error.errors.forEach((err) => {
+    const path = err.path.join('.');
+    fieldErrors[path] = err.message;
+  });
+  
+  return { success: false, errors: fieldErrors };
+};
+```
+
+```typescript
+// features/operations/components/OperationForm.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { CreateOperationSchema } from '@/shared/schemas/operation.schema';
+
+const OperationForm = () => {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<CreateOperationDto>({
+    resolver: zodResolver(CreateOperationSchema),
+  });
+  
+  const onSubmit = async (data: CreateOperationDto) => {
+    // Данные уже валидированы через Zod
+    await createOperation(data);
+  };
+  
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      {/* Поля формы */}
+      {errors.amount && <span>{errors.amount.message}</span>}
+    </form>
+  );
+};
+```
+
+### 14.3 Валидация в Cloud Functions
+
+```typescript
+// firebase-functions/src/shared/validation/operationValidator.ts
+import { z } from 'zod';
+import { OperationSchema, CreateOperationSchema } from '@shared/schemas';
+import { logger } from '../logger';
+
+/**
+ * Валидирует операцию в Cloud Function перед сохранением в Firestore.
+ * Используется в syncOperation и других функциях синхронизации.
+ * @param data - Данные операции из запроса
+ * @param userId - ID пользователя для проверки владения
+ * @returns Валидированные данные или выбрасывает ошибку
+ * @throws {ValidationError} Если валидация не прошла
+ */
+export const validateOperationInFunction = (
+  data: unknown,
+  userId: string
+): z.infer<typeof OperationSchema> => {
+  // Расширяем схему для серверной валидации
+  const serverSchema = CreateOperationSchema.extend({
+    userId: z.literal(userId), // Проверяем соответствие userId
+    id: z.string().uuid(),
+    version: z.number().int().nonnegative(),
+    clientVersion: z.number().int().nonnegative(),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+  });
+  
+  const result = serverSchema.safeParse(data);
+  
+  if (!result.success) {
+    logger.warn('Operation validation failed', {
+      errors: result.error.errors,
+      userId,
+      data,
+    });
+    
+    throw new ValidationError('Invalid operation data', result.error.errors);
+  }
+  
+  return result.data as z.infer<typeof OperationSchema>;
+};
+
+/**
+ * Валидирует массив операций для батч-операций.
+ * @param operations - Массив операций
+ * @param userId - ID пользователя
+ * @returns Массив валидированных операций
+ */
+export const validateOperationsBatch = (
+  operations: unknown[],
+  userId: string
+): z.infer<typeof OperationSchema>[] => {
+  return operations.map((op, index) => {
+    try {
+      return validateOperationInFunction(op, userId);
+    } catch (error) {
+      logger.error(`Failed to validate operation at index ${index}`, {
+        error,
+        userId,
+      });
+      throw new ValidationError(`Operation at index ${index} is invalid`, error);
+    }
+  });
+};
+```
+
+```typescript
+// firebase-functions/src/sync/syncOperation.ts
+import { validateOperationInFunction } from '../shared/validation/operationValidator';
+import { OperationSchema } from '@shared/schemas';
+
+export const syncOperation = functions.firestore
+  .document('users/{userId}/operations/{operationId}')
+  .onWrite(async (change, context) => {
+    const { userId, operationId } = context.params;
+    
+    if (!change.after.exists) {
+      return;
+    }
+    
+    const rawData = change.after.data();
+    
+    try {
+      // Валидация через Zod
+      const operation = validateOperationInFunction(
+        { ...rawData, id: operationId },
+        userId
+      );
+      
+      // Дальнейшая обработка с типобезопасными данными
+      // TypeScript знает структуру operation благодаря Zod
+      
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        // Обработка ошибок валидации
+        await change.after.ref.update({
+          syncStatus: 'failed',
+          syncError: error.message,
+          validationErrors: error.errors,
+        });
+      }
+    }
+  });
+```
+
+### 14.4 Общие схемы и утилиты
+
+```typescript
+// shared/schemas/common.schema.ts
+import { z } from 'zod';
+
+// Схема для пагинации
+export const PaginationSchema = z.object({
+  limit: z.number().int().positive().max(100).default(20),
+  offset: z.number().int().nonnegative().default(0),
+  cursor: z.string().optional(),
+});
+
+// Схема для фильтров операций
+export const OperationFilterSchema = z.object({
+  accountId: z.string().uuid().optional(),
+  categoryId: z.string().uuid().optional(),
+  tagIds: z.array(z.string().uuid()).optional(),
+  type: z.enum(['income', 'expense', 'transfer']).optional(),
+  dateFrom: z.date().optional(),
+  dateTo: z.date().optional(),
+  minAmount: z.number().optional(),
+  maxAmount: z.number().optional(),
+});
+
+// Схема для ответа API
+export const ApiResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
+  z.object({
+    success: z.boolean(),
+    data: dataSchema.optional(),
+    error: z.object({
+      code: z.string(),
+      message: z.string(),
+      details: z.unknown().optional(),
+    }).optional(),
+  });
+
+export type Pagination = z.infer<typeof PaginationSchema>;
+export type OperationFilter = z.infer<typeof OperationFilterSchema>;
+```
+
+### 14.5 Преимущества подхода
+
+1. **Единый источник истины**: Схемы Zod определяют и валидацию, и типы TypeScript
+2. **End-to-end типобезопасность**: Типы генерируются автоматически из схем
+3. **Раннее обнаружение ошибок**: Валидация на клиенте улучшает UX
+4. **Безопасность**: Серверная валидация защищает от подделки данных
+5. **Поддерживаемость**: Изменения в схеме автоматически отражаются в типах
+
+## 15. Dependency Injection и Service Layer
+
+**Roadmap:** M0 (архитектура), M1 (базовые сервисы), M2 (расширение сервисов)
+
+Архитектура использует Dependency Injection через интерфейсы и фабрики для обеспечения слабой связанности и тестируемости кода.
+
+### 15.1 Принципы DI в проекте
+
+1. **Интерфейсы вместо конкретных реализаций**: Все сервисы определены через интерфейсы
+2. **Фабрики для создания зависимостей**: Централизованное управление зависимостями
+3. **Явная передача зависимостей**: Зависимости передаются через конструкторы или параметры
+4. **Легкая замена для тестирования**: Моки реализуют те же интерфейсы
+
+### 15.2 Структура сервисного слоя
+
+```
+shared/
+├── services/
+│   ├── interfaces/              # Интерфейсы сервисов
+│   │   ├── IAccountService.ts
+│   │   ├── IOperationService.ts
+│   │   ├── ISyncService.ts
+│   │   └── IStorageService.ts
+│   │
+│   ├── implementations/         # Реализации сервисов
+│   │   ├── AccountService.ts
+│   │   ├── OperationService.ts
+│   │   ├── SyncService.ts
+│   │   └── IndexedDBStorageService.ts
+│   │
+│   └── factories/                # Фабрики для создания сервисов
+│       ├── ServiceFactory.ts
+│       └── createServices.ts
+```
+
+### 15.3 Примеры интерфейсов и реализаций
+
+```typescript
+// shared/services/interfaces/IAccountService.ts
+import { Account, CreateAccountDto, UpdateAccountDto } from '@/features/accounts/types';
+
+/**
+ * Интерфейс сервиса для работы со счетами.
+ * Определяет контракт для всех реализаций (реальная, мок, тестовая).
+ */
+export interface IAccountService {
+  /**
+   * Получает все счета пользователя.
+   * @param userId - ID пользователя
+   * @returns Массив счетов пользователя
+   */
+  getAccounts(userId: string): Promise<Account[]>;
+  
+  /**
+   * Получает счет по ID.
+   * @param userId - ID пользователя
+   * @param accountId - ID счета
+   * @returns Счет или null, если не найден
+   */
+  getAccountById(userId: string, accountId: string): Promise<Account | null>;
+  
+  /**
+   * Создает новый счет.
+   * @param userId - ID пользователя
+   * @param data - Данные для создания счета
+   * @returns Созданный счет
+   */
+  createAccount(userId: string, data: CreateAccountDto): Promise<Account>;
+  
+  /**
+   * Обновляет существующий счет.
+   * @param userId - ID пользователя
+   * @param accountId - ID счета
+   * @param data - Данные для обновления
+   * @returns Обновленный счет
+   */
+  updateAccount(
+    userId: string,
+    accountId: string,
+    data: UpdateAccountDto
+  ): Promise<Account>;
+  
+  /**
+   * Архивирует счет.
+   * @param userId - ID пользователя
+   * @param accountId - ID счета
+   */
+  archiveAccount(userId: string, accountId: string): Promise<void>;
+  
+  /**
+   * Пересчитывает баланс счета на основе операций.
+   * @param userId - ID пользователя
+   * @param accountId - ID счета
+   * @returns Новый баланс
+   */
+  recalculateBalance(userId: string, accountId: string): Promise<number>;
+}
+```
+
+```typescript
+// shared/services/interfaces/IOperationService.ts
+import { Operation, CreateOperationDto } from '@/features/operations/types';
+
+export interface IOperationService {
+  getOperations(
+    userId: string,
+    filters?: OperationFilters,
+    pagination?: Pagination
+  ): Promise<Operation[]>;
+  
+  getOperationById(userId: string, operationId: string): Promise<Operation | null>;
+  
+  createOperation(userId: string, data: CreateOperationDto): Promise<Operation>;
+  
+  updateOperation(
+    userId: string,
+    operationId: string,
+    data: Partial<CreateOperationDto>
+  ): Promise<Operation>;
+  
+  deleteOperation(userId: string, operationId: string): Promise<void>;
+}
+```
+
+```typescript
+// shared/services/interfaces/IStorageService.ts
+/**
+ * Интерфейс для абстракции хранилища данных.
+ * Позволяет легко переключаться между IndexedDB, localStorage, Firestore.
+ */
+export interface IStorageService {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T): Promise<void>;
+  remove(key: string): Promise<void>;
+  clear(): Promise<void>;
+  keys(): Promise<string[]>;
+}
+```
+
+### 15.4 Реализации сервисов
+
+```typescript
+// shared/services/implementations/AccountService.ts
+import { IAccountService } from '../interfaces/IAccountService';
+import { IStorageService } from '../interfaces/IStorageService';
+import { Account, CreateAccountDto } from '@/features/accounts/types';
+import { firestore } from '@/shared/services/firebase/db';
+
+/**
+ * Реализация сервиса счетов с использованием Firestore.
+ * Зависимости передаются через конструктор для возможности мокирования.
+ */
+export class AccountService implements IAccountService {
+  constructor(
+    private storage: IStorageService, // Для кеширования
+    private db = firestore // Можно передать мок для тестов
+  ) {}
+  
+  async getAccounts(userId: string): Promise<Account[]> {
+    // Проверяем кеш
+    const cached = await this.storage.get<Account[]>(`accounts:${userId}`);
+    if (cached) {
+      return cached;
+    }
+    
+    // Загружаем из Firestore
+    const snapshot = await this.db
+      .collection(`users/${userId}/accounts`)
+      .where('isArchived', '==', false)
+      .get();
+    
+    const accounts = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Account[];
+    
+    // Кешируем
+    await this.storage.set(`accounts:${userId}`, accounts);
+    
+    return accounts;
+  }
+  
+  async createAccount(userId: string, data: CreateAccountDto): Promise<Account> {
+    const accountRef = this.db.collection(`users/${userId}/accounts`).doc();
+    
+    const account: Account = {
+      id: accountRef.id,
+      userId,
+      ...data,
+      balance: data.initialBalance || 0,
+      balanceValidated: data.initialBalance || 0,
+      balanceValidationHash: '',
+      isArchived: false,
+      requiresCheck: false,
+    };
+    
+    await accountRef.set(account);
+    
+    // Инвалидируем кеш
+    await this.storage.remove(`accounts:${userId}`);
+    
+    return account;
+  }
+  
+  // ... остальные методы
+}
+```
+
+```typescript
+// shared/services/implementations/IndexedDBStorageService.ts
+import { IStorageService } from '../interfaces/IStorageService';
+import { openDB, DBSchema, IDBPDatabase } from 'idb';
+
+interface FinPalDB extends DBSchema {
+  storage: {
+    key: string;
+    value: unknown;
+  };
+}
+
+/**
+ * Реализация хранилища на основе IndexedDB.
+ * Используется для оффлайн-кеширования и очереди синхронизации.
+ */
+export class IndexedDBStorageService implements IStorageService {
+  private db: IDBPDatabase<FinPalDB> | null = null;
+  
+  private async getDB(): Promise<IDBPDatabase<FinPalDB>> {
+    if (!this.db) {
+      this.db = await openDB<FinPalDB>('finpal-storage', 1, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains('storage')) {
+            db.createObjectStore('storage');
+          }
+        },
+      });
+    }
+    return this.db;
+  }
+  
+  async get<T>(key: string): Promise<T | null> {
+    const db = await this.getDB();
+    const value = await db.get('storage', key);
+    return (value as T) || null;
+  }
+  
+  async set<T>(key: string, value: T): Promise<void> {
+    const db = await this.getDB();
+    await db.put('storage', value, key);
+  }
+  
+  async remove(key: string): Promise<void> {
+    const db = await this.getDB();
+    await db.delete('storage', key);
+  }
+  
+  async clear(): Promise<void> {
+    const db = await this.getDB();
+    await db.clear('storage');
+  }
+  
+  async keys(): Promise<string[]> {
+    const db = await this.getDB();
+    return db.getAllKeys('storage') as Promise<string[]>;
+  }
+}
+```
+
+### 15.5 Фабрики сервисов
+
+```typescript
+// shared/services/factories/ServiceFactory.ts
+import { IAccountService } from '../interfaces/IAccountService';
+import { IOperationService } from '../interfaces/IOperationService';
+import { IStorageService } from '../interfaces/IStorageService';
+import { AccountService } from '../implementations/AccountService';
+import { OperationService } from '../implementations/OperationService';
+import { IndexedDBStorageService } from '../implementations/IndexedDBStorageService';
+import { LocalStorageService } from '../implementations/LocalStorageService';
+
+/**
+ * Конфигурация сервисов для разных окружений.
+ */
+export interface ServiceConfig {
+  useIndexedDB: boolean; // Использовать IndexedDB или localStorage
+  enableCaching: boolean; // Включить кеширование
+}
+
+/**
+ * Фабрика для создания сервисов с правильными зависимостями.
+ * Централизует логику создания и позволяет легко менять реализации.
+ */
+export class ServiceFactory {
+  private static storageService: IStorageService | null = null;
+  private static accountService: IAccountService | null = null;
+  private static operationService: IOperationService | null = null;
+  
+  /**
+   * Создает или возвращает singleton экземпляр хранилища.
+   */
+  static getStorageService(config?: ServiceConfig): IStorageService {
+    if (!this.storageService) {
+      this.storageService = config?.useIndexedDB
+        ? new IndexedDBStorageService()
+        : new LocalStorageService();
+    }
+    return this.storageService;
+  }
+  
+  /**
+   * Создает сервис счетов с необходимыми зависимостями.
+   */
+  static getAccountService(config?: ServiceConfig): IAccountService {
+    if (!this.accountService) {
+      const storage = this.getStorageService(config);
+      this.accountService = new AccountService(storage);
+    }
+    return this.accountService;
+  }
+  
+  /**
+   * Создает сервис операций.
+   */
+  static getOperationService(config?: ServiceConfig): IOperationService {
+    if (!this.operationService) {
+      const storage = this.getStorageService(config);
+      this.operationService = new OperationService(storage);
+    }
+    return this.operationService;
+  }
+  
+  /**
+   * Сбрасывает все сервисы (полезно для тестов).
+   */
+  static reset(): void {
+    this.storageService = null;
+    this.accountService = null;
+    this.operationService = null;
+  }
+}
+```
+
+### 15.6 Использование в компонентах и сторах
+
+```typescript
+// features/accounts/stores/accountStore.ts
+import { create } from 'zustand';
+import { ServiceFactory } from '@/shared/services/factories/ServiceFactory';
+import { IAccountService } from '@/shared/services/interfaces/IAccountService';
+
+interface AccountState {
+  accounts: Account[];
+  isLoading: boolean;
+  accountService: IAccountService; // Сервис как часть состояния
+  
+  fetchAccounts: (userId: string) => Promise<void>;
+  createAccount: (userId: string, data: CreateAccountDto) => Promise<void>;
+}
+
+export const useAccountStore = create<AccountState>((set, get) => ({
+  accounts: [],
+  isLoading: false,
+  // Инициализируем сервис через фабрику
+  accountService: ServiceFactory.getAccountService({
+    useIndexedDB: true,
+    enableCaching: true,
+  }),
+  
+  fetchAccounts: async (userId: string) => {
+    set({ isLoading: true });
+    try {
+      const accounts = await get().accountService.getAccounts(userId);
+      set({ accounts, isLoading: false });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+  
+  createAccount: async (userId: string, data: CreateAccountDto) => {
+    const account = await get().accountService.createAccount(userId, data);
+    set((state) => ({
+      accounts: [...state.accounts, account],
+    }));
+  },
+}));
+```
+
+### 15.7 Тестирование с моками
+
+```typescript
+// tests/unit/AccountService.test.ts
+import { AccountService } from '@/shared/services/implementations/AccountService';
+import { IStorageService } from '@/shared/services/interfaces/IStorageService';
+
+// Мок реализации хранилища
+class MockStorageService implements IStorageService {
+  private data: Map<string, unknown> = new Map();
+  
+  async get<T>(key: string): Promise<T | null> {
+    return (this.data.get(key) as T) || null;
+  }
+  
+  async set<T>(key: string, value: T): Promise<void> {
+    this.data.set(key, value);
+  }
+  
+  async remove(key: string): Promise<void> {
+    this.data.delete(key);
+  }
+  
+  async clear(): Promise<void> {
+    this.data.clear();
+  }
+  
+  async keys(): Promise<string[]> {
+    return Array.from(this.data.keys());
+  }
+}
+
+describe('AccountService', () => {
+  let accountService: AccountService;
+  let mockStorage: IStorageService;
+  
+  beforeEach(() => {
+    mockStorage = new MockStorageService();
+    accountService = new AccountService(mockStorage);
+  });
+  
+  it('should cache accounts after fetching', async () => {
+    // Тест с мок-хранилищем
+    const accounts = await accountService.getAccounts('user1');
+    const cached = await mockStorage.get('accounts:user1');
+    
+    expect(cached).toEqual(accounts);
+  });
+});
+```
+
+### 15.8 Преимущества подхода
+
+1. **Тестируемость**: Легко создавать моки для тестирования
+2. **Гибкость**: Можно менять реализации без изменения кода, использующего сервисы
+3. **Слабая связанность**: Компоненты не зависят от конкретных реализаций
+4. **Централизованное управление**: Фабрики контролируют создание зависимостей
+5. **Поддерживаемость**: Изменения в одном сервисе не влияют на другие
+
+## 16. Документация для разработчиков
 
 ### 14.1 Стартовый гайд
 
