@@ -4,8 +4,18 @@
  */
 import { render, screen } from '@testing-library/react';
 import { AppProviders } from '../AppProviders';
+import { getFirestoreInstance } from '@/shared/services/firebase/config';
+
+// Мокируем Firebase конфигурацию
+jest.mock('@/shared/services/firebase/config', () => ({
+  getFirestoreInstance: jest.fn(),
+}));
 
 describe('AppProviders', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('should render children', () => {
     render(
       <AppProviders>
@@ -51,5 +61,16 @@ describe('AppProviders', () => {
 
     expect(screen.getByTestId('child-1')).toBeInTheDocument();
     expect(screen.getByTestId('child-2')).toBeInTheDocument();
+  });
+
+  it('should initialize Firestore on mount', () => {
+    render(
+      <AppProviders>
+        <div>Content</div>
+      </AppProviders>
+    );
+
+    // Проверяем, что getFirestoreInstance был вызван при монтировании
+    expect(getFirestoreInstance).toHaveBeenCalledTimes(1);
   });
 });

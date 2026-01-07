@@ -5,6 +5,16 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRouter } from '../AppRouter';
+import { ROUTES } from '../routes.config';
+
+// Моки для зависимостей
+jest.mock('@/features/auth/pages/LoginPage', () => ({
+  LoginPage: () => <div data-testid="login-page">LoginPage</div>,
+}));
+
+jest.mock('@/features/auth/pages/HomePage', () => ({
+  HomePage: () => <div data-testid="home-page">HomePage</div>,
+}));
 
 /**
  * Конфигурация MemoryRouter для тестов с future flags React Router v7.
@@ -23,17 +33,16 @@ const createTestRouter = (initialEntries: string[] = ['/']) => (
 );
 
 describe('AppRouter', () => {
-  it('should render home route', () => {
-    render(createTestRouter(['/']));
+  it('should render login route', () => {
+    render(createTestRouter([ROUTES.LOGIN]));
 
-    expect(screen.getByText('FinPal - Главная страница')).toBeInTheDocument();
+    expect(screen.getByTestId('login-page')).toBeInTheDocument();
   });
 
-  it('should render home route at root path', () => {
-    render(createTestRouter(['/']));
+  it('should render home page route', () => {
+    render(createTestRouter([ROUTES.HOME]));
 
-    const homeContent = screen.getByText('FinPal - Главная страница');
-    expect(homeContent).toBeInTheDocument();
+    expect(screen.getByTestId('home-page')).toBeInTheDocument();
   });
 
   it('should render Routes component', () => {

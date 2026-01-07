@@ -16,6 +16,19 @@ export const theme = createTheme({
     error: {
       main: '#EF4444',
     },
+    background: {
+      default: '#ffffff',
+      paper: '#ffffff',
+    },
+  },
+  components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          backgroundColor: '#ffffff',
+        },
+      },
+    },
   },
 });
 

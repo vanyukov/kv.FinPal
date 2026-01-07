@@ -10,8 +10,14 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
     
-    // Базовые правила - deny all по умолчанию
-    // Будет расширено в Milestone 1 и Milestone 2
+    // Базовые правила для аутентификации
+    // Пользователи могут читать и писать только свои данные
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+    }
+    
+    // Правила для будущих коллекций будут добавлены в Milestone 2
+    // Пока что все остальные коллекции запрещены
     match /{document=**} {
       allow read, write: if false;
     }
