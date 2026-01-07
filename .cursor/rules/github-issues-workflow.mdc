@@ -14,15 +14,14 @@ alwaysApply: true
 - Извлеките из ссылки: owner, repo, issue number
 - Используйте GitHub API для получения информации об issue (если доступен токен) или веб-поиск для получения содержимого issue
 
-### Шаг 2: Установка статуса "В работе"
-- **ПЕРЕД** началом выполнения задачи, установите статус issue на "в работе"
-- **Способ 1 (GitHub CLI)**:
-  - Проверьте наличие лейбла: `gh label list --repo {owner}/{repo} | grep -i "in progress"`
-  - Если лейбл существует: `gh issue edit {number} --repo {owner}/{repo} --add-label "in progress"`
-  - Если лейбл не существует, создайте его или используйте альтернативный способ
-- **Способ 2 (GitHub API)**: `PATCH /repos/{owner}/{repo}/issues/{issue_number}` с телом `{"labels": ["in progress"]}`
-- **Способ 3 (GitHub Projects)**: Если используется GitHub Projects, переместите issue в колонку "In Progress" через веб-интерфейс
-- **Примечание**: Если автоматическое изменение статуса недоступно, выполните задачу и укажите это в комментарии
+### Шаг 2: Установка статуса "In Progress"
+- **ПЕРЕД** началом выполнения задачи, установите статус issue в проекте на "In Progress"
+- **Способ (GitHub Projects через GraphQL API)**:
+  1. Получите ID проекта: `gh api graphql -f query='query($owner: String!) { user(login: $owner) { projectsV2(first: 5) { nodes { id title number } } } }' -f owner={owner}`
+  2. Получите ID issue и его project item: `gh api graphql -f query='query { repository(owner: "{owner}", name: "{repo}") { issue(number: {number}) { id projectItems(first: 5) { nodes { id project { id } } } } } }'`
+  3. Получите ID поля Status и опцию "In Progress": `gh api graphql -f query='query($projectId: ID!) { node(id: $projectId) { ... on ProjectV2 { fields(first: 20) { nodes { ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }' -f projectId={projectId}`
+  4. Обновите статус: `gh api graphql -f query='mutation { updateProjectV2ItemFieldValue(input: { projectId: "{projectId}", itemId: "{itemId}", fieldId: "{statusFieldId}", value: { singleSelectOptionId: "{inProgressOptionId}" } }) { projectV2Item { id } } }'`
+- **Примечание**: Если issue не добавлен в проект, сначала добавьте его через веб-интерфейс или API. Если автоматическое изменение статуса недоступно, выполните задачу и укажите это в комментарии
 
 ### Шаг 3: Выполнение задачи
 - Внимательно прочитайте описание issue, все комментарии и связанные материалы
@@ -47,9 +46,23 @@ alwaysApply: true
 - После добавления комментария, закройте issue
 - **Способ 1 (GitHub CLI)**: `gh issue close {number} --repo {owner}/{repo} --comment "{краткое описание}"`
 - **Способ 2 (GitHub API)**: `PATCH /repos/{owner}/{repo}/issues/{issue_number}` с телом `{"state": "closed"}`
-- Если используется GitHub Projects, переместите issue в колонку "Done" или "Completed"
+- Если используется GitHub Projects, переместите issue в статус "Done" через GraphQL API (аналогично Шагу 2, но используя optionId для статуса "Done")
 
 ## Технические детали
+
+### Константы для проекта kv.FinPal
+Для проекта `vanyukov/kv.FinPal` используются следующие константы:
+- **Project ID**: `PVT_kwHOAiO8m84BLwKz` (проект "FinPal" #2)
+- **Status Field ID**: `PVTSSF_lAHOAiO8m84BLwKzzg7O4Yo`
+- **Status Option IDs**:
+  - Todo: `f75ad846`
+  - In Progress: `47fc9ee4`
+  - Done: `98236657`
+
+**Пример команды для установки статуса "In Progress"** (после получения itemId):
+```bash
+gh api graphql -f query='mutation { updateProjectV2ItemFieldValue(input: { projectId: "PVT_kwHOAiO8m84BLwKz", itemId: "{itemId}", fieldId: "PVTSSF_lAHOAiO8m84BLwKzzg7O4Yo", value: { singleSelectOptionId: "47fc9ee4" } }) { projectV2Item { id } } }'
+```
 
 ### GitHub API аутентификация
 Для работы с GitHub API доступны следующие способы аутентификации (проверять в указанном порядке):
@@ -63,7 +76,7 @@ alwaysApply: true
      - `gh issue comment {number} --repo {owner}/{repo} --body "{text}"` - добавление комментария
      - `gh issue close {number} --repo {owner}/{repo} --comment "{text}"` - закрытие issue с комментарием
      - `gh issue reopen {number} --repo {owner}/{repo}` - открытие issue
-     - `gh issue edit {number} --repo {owner}/{repo} --add-label "in progress"` - добавление лейбла (если лейбл существует)
+     - Изменение статуса в GitHub Projects через GraphQL API (см. Шаг 2)
 
 2. **Переменная окружения GITHUB_TOKEN**:
    - Проверьте наличие: `echo $GITHUB_TOKEN` или `env | grep GITHUB_TOKEN`
