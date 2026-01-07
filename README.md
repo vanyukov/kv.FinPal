@@ -1,46 +1,66 @@
-# FinPal - Personal Finance Tracker
+# FinPal
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![React](https://img.shields.io/badge/React-19-blue)](https://reactjs.org/)
-[![Firebase](https://img.shields.io/badge/Firebase-10.7-orange)](https://firebase.google.com/)
+**FinPal** — прогрессивное веб-приложение (PWA) для управления личными финансами с оффлайн-первым подходом.
 
-Прогрессивное веб-приложение для учета личных финансов с оффлайн-режимом.
+## Технологический стек
 
-## 📋 Документация
+- **Frontend:** React 19 + TypeScript, Material-UI, Zustand, React Router, Recharts
+- **Backend:** Firebase (Firestore, Auth, Functions, Hosting)
+- **Валидация:** Zod
+- **CI/CD:** GitHub Actions
+- **Мониторинг:** Sentry, Cloud Logging
 
-- [Полная спецификация](/docs/SPECIFICATION.md) - Детальное описание функционала
-- [Архитектура](ARCHITECTURE.md) - Техническая архитектура
-- [План разработки](ROADMAP.md) - Roadmap и MVP
+## Быстрый старт
 
-## 🚀 Быстрый старт
+### Требования
+
+- Node.js 18+
+- npm или yarn
+
+### Установка
 
 ```bash
-git clone git@github.com:vanyukov/kv.FinPal.git
-cd kv.FinPal
 npm install
-npm start
 ```
 
-## 📱 Основные возможности
+### Разработка
 
-- 💰 Учет доходов/расходов
+```bash
+npm run dev
+```
 
-- 🔄 Оффлайн-работа через Firebase
+Приложение будет доступно по адресу `http://localhost:5173`
 
-- 📊 Отчеты и аналитика
+### Сборка
 
-- 📅 Регулярные операции
+```bash
+npm run build
+```
 
-- 🌙 Темная тема
+### Линтинг и форматирование
 
-## 🛠 Технологии
+```bash
+npm run lint
+npm run format
+```
 
-- React 18 + TypeScript
+## Структура проекта
 
-- Firebase (Auth, Firestore)
+```
+src/
+├── features/          # Доменные модули (accounts, operations, categories, etc.)
+├── shared/            # Общие ресурсы (UI компоненты, утилиты, сервисы)
+├── app/               # Конфигурация приложения (роутинг, провайдеры)
+└── index.tsx          # Точка входа
+```
 
-- PWA (Service Workers)
+## Документация
 
-- Material-UI
+- [Архитектура](./docs/ARCHITECTURE.md)
+- [Roadmap](./docs/ROADMAP.md)
+- [Спецификация](./docs/SPECIFICATION.md)
+- [ADR (Architecture Decision Records)](./docs/adr/)
 
-- Recharts
+## Лицензия
+
+MIT

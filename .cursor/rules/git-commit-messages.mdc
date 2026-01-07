@@ -28,12 +28,12 @@ BREAKING-CHANGE MUST be synonymous with BREAKING CHANGE, when used as a token in
 If a commit is made as part of completing a GitHub issue (when a GitHub issue link was provided), the commit message MUST include a reference to the issue in the footer section.
 
 The issue reference MUST be added as a footer using one of the following formats:
-- `Closes #{issue_number}` - when the commit closes the issue
-- `Fixes #{issue_number}` - when the commit fixes a bug described in the issue
-- `Resolves #{issue_number}` - when the commit resolves the issue
-- `Refs #{issue_number}` - when the commit references the issue but doesn't close it
+- `Closes {full_issue_url}` - when the commit closes the issue
+- `Fixes {full_issue_url}` - when the commit fixes a bug described in the issue
+- `Resolves {full_issue_url}` - when the commit resolves the issue
+- `Refs {full_issue_url}` - when the commit references the issue but doesn't close it
 
-The issue number MUST be extracted from the GitHub issue URL provided. For example, if the URL is `https://github.com/vanyukov/kv.FinPal/issues/1`, the footer MUST include `Closes #1` or `Fixes #1` or `Resolves #1`.
+The full issue URL MUST be used. For example, if the URL is `https://github.com/vanyukov/kv.FinPal/issues/1`, the footer MUST include `Closes https://github.com/vanyukov/kv.FinPal/issues/1` or `Fixes https://github.com/vanyukov/kv.FinPal/issues/1` or `Resolves https://github.com/vanyukov/kv.FinPal/issues/1`.
 
 **Example commit message with issue reference:**
 ```
@@ -42,7 +42,7 @@ feat(auth): add user authentication system
 Implement JWT-based authentication with refresh tokens.
 Add login, logout, and token refresh endpoints.
 
-Closes #42
+Closes https://github.com/vanyukov/kv.FinPal/issues/42
 ```
 
 **Example commit message with multiple issues:**
@@ -51,7 +51,7 @@ fix(api): resolve validation errors and improve error handling
 
 Fix input validation issues and add comprehensive error messages.
 
-Fixes #15
-Fixes #23
+Fixes https://github.com/vanyukov/kv.FinPal/issues/15
+Fixes https://github.com/vanyukov/kv.FinPal/issues/23
 ```
     

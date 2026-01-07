@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Вспомогательные функции
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Базовые правила - deny all по умолчанию
+    // Будет расширено в Milestone 1 и Milestone 2
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
