@@ -1,0 +1,139 @@
+---
+description: Автоматический workflow для работы с GitHub issues. При получении ссылки на issue автоматически меняет статус, выполняет задачу и закрывает issue.
+alwaysApply: true
+---
+
+# GitHub Issues Workflow Rule
+
+## Обязательное поведение при работе с GitHub Issues
+
+Когда пользователь предоставляет ссылку на GitHub issue (например, `https://github.com/vanyukov/kv.FinPal/issues/1`), вы ДОЛЖНЫ выполнить следующий workflow в строгом порядке:
+
+### Шаг 1: Распознавание и извлечение информации
+- Распознайте ссылку на GitHub issue в формате: `https://github.com/{owner}/{repo}/issues/{number}`
+- Извлеките из ссылки: owner, repo, issue number
+- Используйте GitHub API для получения информации об issue (если доступен токен) или веб-поиск для получения содержимого issue
+
+### Шаг 2: Установка статуса "В работе"
+- **ПЕРЕД** началом выполнения задачи, установите статус issue на "в работе"
+- **Способ 1 (GitHub CLI)**:
+  - Проверьте наличие лейбла: `gh label list --repo {owner}/{repo} | grep -i "in progress"`
+  - Если лейбл существует: `gh issue edit {number} --repo {owner}/{repo} --add-label "in progress"`
+  - Если лейбл не существует, создайте его или используйте альтернативный способ
+- **Способ 2 (GitHub API)**: `PATCH /repos/{owner}/{repo}/issues/{issue_number}` с телом `{"labels": ["in progress"]}`
+- **Способ 3 (GitHub Projects)**: Если используется GitHub Projects, переместите issue в колонку "In Progress" через веб-интерфейс
+- **Примечание**: Если автоматическое изменение статуса недоступно, выполните задачу и укажите это в комментарии
+
+### Шаг 3: Выполнение задачи
+- Внимательно прочитайте описание issue, все комментарии и связанные материалы
+- Выполните все требования из issue полностью
+- Следуйте всем правилам проекта (code-documentation, fe-dev, web-architect и т.д.)
+- Убедитесь, что задача выполнена на 100%, без TODO и заглушек
+- **ВАЖНО**: При создании коммитов ОБЯЗАТЕЛЬНО добавляйте ссылку на issue в footer коммита (см. правило git-commit-messages)
+  - Формат: `Closes #{issue_number}`, `Fixes #{issue_number}`, `Resolves #{issue_number}` или `Refs #{issue_number}`
+  - Пример: `feat: add feature\n\nCloses #1`
+
+### Шаг 4: Документирование выполненной работы
+- После успешного выполнения задачи, добавьте комментарий в issue
+- Комментарий ДОЛЖЕН содержать:
+  - Краткое описание выполненных изменений
+  - Список измененных файлов (если применимо)
+  - Ссылки на коммиты (если были созданы)
+  - Инструкции по тестированию (если применимо)
+- **Способ 1 (GitHub CLI)**: `gh issue comment {number} --repo {owner}/{repo} --body "{текст комментария}"`
+- **Способ 2 (GitHub API)**: `POST /repos/{owner}/{repo}/issues/{issue_number}/comments` с телом `{"body": "{текст комментария}"}`
+
+### Шаг 5: Закрытие issue
+- После добавления комментария, закройте issue
+- **Способ 1 (GitHub CLI)**: `gh issue close {number} --repo {owner}/{repo} --comment "{краткое описание}"`
+- **Способ 2 (GitHub API)**: `PATCH /repos/{owner}/{repo}/issues/{issue_number}` с телом `{"state": "closed"}`
+- Если используется GitHub Projects, переместите issue в колонку "Done" или "Completed"
+
+## Технические детали
+
+### GitHub API аутентификация
+Для работы с GitHub API доступны следующие способы аутентификации (проверять в указанном порядке):
+
+1. **GitHub CLI (gh)** - предпочтительный способ:
+   - Проверьте наличие: `which gh && gh auth status`
+   - Если установлен и авторизован, используйте команды `gh issue` для управления
+   - **Важно**: Для работы GitHub CLI в sandbox окружении требуются полные права (`required_permissions: ['all']`)
+   - Примеры команд:
+     - `gh issue view {number} --repo {owner}/{repo}` - просмотр issue
+     - `gh issue comment {number} --repo {owner}/{repo} --body "{text}"` - добавление комментария
+     - `gh issue close {number} --repo {owner}/{repo} --comment "{text}"` - закрытие issue с комментарием
+     - `gh issue reopen {number} --repo {owner}/{repo}` - открытие issue
+     - `gh issue edit {number} --repo {owner}/{repo} --add-label "in progress"` - добавление лейбла (если лейбл существует)
+
+2. **Переменная окружения GITHUB_TOKEN**:
+   - Проверьте наличие: `echo $GITHUB_TOKEN` или `env | grep GITHUB_TOKEN`
+   - Токен может быть установлен в настройках IDE (Cursor) и доступен через переменные окружения IDE
+   - Если токен установлен в IDE, но не виден в терминале, попробуйте использовать его напрямую в API запросах
+   - Токен должен иметь права: `repo`, `issues:write`
+   - Используйте в заголовке: `Authorization: token $GITHUB_TOKEN` или `Authorization: Bearer $GITHUB_TOKEN`
+
+3. **Файл .env в корне проекта**:
+   - Проверьте наличие файла `.env` с переменной `GITHUB_TOKEN=...`
+   - Загрузите переменные: `source .env` или `export $(cat .env | xargs)`
+
+4. **Веб-браузер (fallback)**:
+   - Если API недоступен, используйте браузерные инструменты для чтения issue
+   - Предупредите пользователя, что автоматическое управление статусом недоступно без токена
+
+### Проверка доступа перед началом работы
+Перед выполнением workflow проверьте доступность аутентификации:
+```bash
+# Проверка GitHub CLI
+gh auth status 2>/dev/null && echo "GitHub CLI доступен" || echo "GitHub CLI недоступен"
+
+# Проверка токена в окружении
+[ -n "$GITHUB_TOKEN" ] && echo "GITHUB_TOKEN найден" || echo "GITHUB_TOKEN не найден"
+
+# Проверка .env файла
+[ -f .env ] && grep -q GITHUB_TOKEN .env && echo ".env содержит GITHUB_TOKEN" || echo ".env не найден или не содержит токен"
+```
+
+### Формат комментария о выполнении
+Комментарий должен быть структурирован следующим образом:
+
+```markdown
+✅ Задача выполнена
+
+## Выполненные изменения:
+- [Описание изменений]
+
+## Измененные файлы:
+- `path/to/file1.ts`
+- `path/to/file2.ts`
+
+## Коммиты:
+- [Ссылка на коммит, если применимо]
+
+## Тестирование:
+[Инструкции по тестированию, если применимо]
+```
+
+### Обработка ошибок
+- Если не удается получить доступ к GitHub API, предупредите пользователя и выполните задачу вручную
+- Если issue уже закрыт, все равно выполните задачу и добавьте комментарий
+- Если issue не существует, сообщите пользователю об ошибке
+
+## Пример workflow
+
+1. Пользователь: "Выполни https://github.com/vanyukov/kv.FinPal/issues/1"
+2. AI: 
+   - Извлекает: owner=vanyukov, repo=kv.FinPal, issue_number=1
+   - Получает информацию об issue
+   - Устанавливает статус "in progress"
+   - Выполняет задачу из issue
+   - Добавляет комментарий о выполнении
+   - Закрывает issue со статусом "closed"
+
+## Важные замечания
+
+- НИКОГДА не пропускайте шаги workflow
+- Всегда выполняйте задачу полностью перед закрытием issue
+- Если задача требует дополнительной информации, запросите её у пользователя, но не закрывайте issue до завершения
+- Следуйте всем правилам проекта при выполнении задачи
+
+# If this rule was applied, display at the beginning of the response: "Applied: github-issues-workflow RULE ⓵"
