@@ -1,9 +1,11 @@
 # Roadmap для разработки FinPal (PWA для учета финансов)
 
 ## Обзор проекта
+
 **FinPal** — прогрессивное веб-приложение (PWA) для отслеживания личных финансов с акцентом на оффлайн-работу и кроссплатформенность. Приложение позволяет пользователям управлять счетами, операциями, категориями и получать аналитику по расходам/доходам.
 
 **Технологический стек:**
+
 - **Frontend:** React + TypeScript, Material-UI, Zustand, React Router, Recharts
 - **Backend/Infrastructure:** Firebase (Auth, Firestore, Cloud Functions, Hosting)
 - **Валидация:** Zod (схемы и генерация типов)
@@ -16,9 +18,11 @@
 ## Дорожная карта разработки
 
 ### Milestone 0 (M0): Подготовка и архитектура (2-3 недели)
+
 **Цель:** Создать прочный фундамент для разработки
 
 **Задачи:**
+
 1. **Архитектура проекта** ✅
    - [x] Определить структуру папок (feature-based подход)
    - [x] Настроить абсолютные импорты (`@/components/`)
@@ -44,8 +48,8 @@
 4. **Инфраструктура CI/CD** ✅
    - [x] Настроить GitHub Actions workflow:
      - [x] Линтинг и проверка типов
-     - [ ] Unit-тесты (Jest) - будет добавлено в M1
-     - [ ] Автодеплой на Firebase Hosting при пуше в main - будет добавлено в M5
+     - [x] Unit-тесты (Jest)
+     - [x] Автодеплой на Firebase Hosting при пуше в main
    - [x] Создать разные окружения (dev, staging, prod)
 
 5. **Базовая конфигурация Firebase** ✅
@@ -54,6 +58,7 @@
    - [x] Настроить базовые Security Rules (deny all по умолчанию)
 
 **Критерии завершения:**
+
 - [x] Проект запускается через `npm run dev`
 - [x] ESLint/Prettier работают в pre-commit хуках
 - [x] CI pipeline проходит успешно
@@ -63,9 +68,11 @@
 ---
 
 ### Milestone 1 (M1): Каркас приложения (3-4 недели)
+
 **Цель:** Реализовать базовую инфраструктуру приложения
 
 **Задачи:**
+
 1. **Настройка Firebase сервисов**
    - Активировать Firestore, Authentication, Hosting
    - Настроить Firestore с оффлайн-персистентностью
@@ -99,6 +106,7 @@
    - Настроить end-to-end type safety (backend → frontend)
 
 **Критерии завершения:**
+
 - [ ] Работает аутентификация через Google
 - [ ] Приложение работает оффлайн (статический контент)
 - [ ] Реализован базовый layout с навигацией
@@ -109,9 +117,11 @@
 ---
 
 ### Milestone 2 (M2): Базовые сущности и операции (4-5 недели)
+
 **Цель:** Реализовать ядро функционала: счета, категории, операции
 
 **Задачи:**
+
 1. **Модуль счетов (Accounts)**
    - CRUD интерфейс для управления счетами
    - Форма создания/редактирования с валидацией (Zod схемы)
@@ -142,6 +152,7 @@
    - Кеширование агрегированных данных в IndexedDB
 
 **Firestore Security Rules для M2:**
+
 ```javascript
 rules_version = '2';
 service cloud.firestore {
@@ -163,6 +174,7 @@ service cloud.firestore {
 ```
 
 **Критерии завершения:**
+
 - [ ] Пользователь может создавать/редактировать счета
 - [ ] Реализована иерархия категорий
 - [ ] Добавление операций работает в оффлайн-режиме
@@ -173,9 +185,11 @@ service cloud.firestore {
 ---
 
 ### Milestone 3 (M3): Расширенный функционал (3-4 недели)
+
 **Цель:** Добавить функции для регулярного использования
 
 **Задачи:**
+
 1. **Шаблоны и регулярные операции**
    - CRUD для шаблонов операций
    - Форма настройки регулярности (daily/weekly/monthly)
@@ -201,6 +215,7 @@ service cloud.firestore {
    - Адаптивная сетка виджетов
 
 **Код Cloud Function для валют:**
+
 ```javascript
 exports.updateCurrencyRates = functions.pubsub
   .schedule('0 2 * * *') // 02:00 UTC ежедневно
@@ -209,26 +224,31 @@ exports.updateCurrencyRates = functions.pubsub
     const rates = await fetchRatesFromAPI('exchangerate.host');
     const batch = firestore.batch();
     const baseCurrency = 'USD';
-    
+
     for (const [code, rate] of Object.entries(rates)) {
       const currencyRef = firestore.doc(`currencies/${code}`);
-      batch.set(currencyRef, {
-        code,
-        name: getCurrencyName(code),
-        symbol: getCurrencySymbol(code),
-        rates: { [baseCurrency]: 1/rate },
-        baseCurrency,
-        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-        source: 'exchangerate.host'
-      }, { merge: true });
+      batch.set(
+        currencyRef,
+        {
+          code,
+          name: getCurrencyName(code),
+          symbol: getCurrencySymbol(code),
+          rates: { [baseCurrency]: 1 / rate },
+          baseCurrency,
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+          source: 'exchangerate.host',
+        },
+        { merge: true }
+      );
     }
-    
+
     await batch.commit();
     console.log(`Updated ${Object.keys(rates).length} currency rates`);
   });
 ```
 
 **Критерии завершения:**
+
 - [ ] Регулярные операции создаются автоматически
 - [ ] Теги работают для фильтрации и организации
 - [ ] Курсы валют обновляются ежедневно
@@ -237,9 +257,11 @@ exports.updateCurrencyRates = functions.pubsub
 ---
 
 ### Milestone 4 (M4): Аналитика и отчеты (3-4 недели)
+
 **Цель:** Предоставить пользователю аналитику и визуализацию
 
 **Задачи:**
+
 1. **Система агрегированных отчетов**
    - Cloud Function для ежедневной агрегации данных
    - Сохранение сводок в коллекцию `reports/{userId}/{monthKey}`
@@ -264,6 +286,7 @@ exports.updateCurrencyRates = functions.pubsub
    - Тёмная/светлая тема для графиков
 
 **Firestore структура для отчетов:**
+
 ```javascript
 // Коллекция: /reports/{userId}/{year}-{month}
 {
@@ -303,6 +326,7 @@ exports.updateCurrencyRates = functions.pubsub
 ```
 
 **Критерии завершения:**
+
 - [ ] Отчеты генерируются автоматически раз в день
 - [ ] Графики корректно отображают данные
 - [ ] Дашборд настраивается пользователем
@@ -311,9 +335,11 @@ exports.updateCurrencyRates = functions.pubsub
 ---
 
 ### Milestone 5 (M5): Полировка и релиз (3-4 недели)
+
 **Цель:** Довести приложение до продакшен-готовности
 
 **Задачи:**
+
 1. **PWA-оптимизации**
    - Генерация манифеста с иконками для всех платформ
    - Настройка стратегий кеширования Workbox
@@ -355,6 +381,7 @@ exports.updateCurrencyRates = functions.pubsub
    - Подготовка FAQ и гайдов
 
 **Критерии завершения:**
+
 - [ ] PWA проходит все аудиты Lighthouse
 - [ ] Test coverage > 80% для критического кода
 - [ ] Нет critical ошибок в Sentry
@@ -368,16 +395,20 @@ exports.updateCurrencyRates = functions.pubsub
 ## Критические моменты и рекомендации
 
 ### 1. Оффлайн-синхронизация
+
 **Проблема:** Конфликты при синхронизации после оффлайн-работы  
-**Решение:** 
+**Решение:**
+
 - Реализовать поле `version` для optimistic concurrency control
 - Использовать `serverTimestamp` для единой временной шкалы
 - Реализовать очередь операций для оффлайн
 - Визуально помечать несинхронизированные данные
 
 ### 2. Безопасность данных
+
 **Проблема:** Защита пользовательских данных в мультитенантной среде  
 **Решение:**
+
 - Детализированные Firestore Security Rules
 - Валидация данных через Zod схемы в Cloud Functions перед записью
 - Генерация TypeScript типов из Zod для end-to-end type safety
@@ -385,16 +416,20 @@ exports.updateCurrencyRates = functions.pubsub
 - Регулярные аудиты правил доступа
 
 ### 3. Оптимизация лимитов Firestore
+
 **Проблема:** Превышение квот (50к reads/день)  
 **Решение:**
+
 - Агрегация данных в Cloud Functions
 - Кеширование отчетов в отдельной коллекции
 - Пагинация с cursor-based навигацией
 - Композитные индексы для всех запросов
 
 ### 4. Производительность UI
+
 **Проблема:** Медленная работа с большими списками операций  
 **Решение:**
+
 - Виртуализация списков (react-window)
 - Ленивая загрузка исторических данных
 - Дебаунсинг фильтров и поиска
@@ -402,14 +437,14 @@ exports.updateCurrencyRates = functions.pubsub
 
 ## Оценка временных затрат
 
-| Этап | Длительность | Основные риски |
-|------|--------------|----------------|
-| M0   | 2-3 недели   | Настройка CI/CD, Firebase |
-| M1   | 3-4 недели   | Оффлайн-синхронизация, Auth |
-| M2   | 4-5 недель   | Сложность бизнес-логики операций |
+| Этап | Длительность | Основные риски                       |
+| ---- | ------------ | ------------------------------------ |
+| M0   | 2-3 недели   | Настройка CI/CD, Firebase            |
+| M1   | 3-4 недели   | Оффлайн-синхронизация, Auth          |
+| M2   | 4-5 недель   | Сложность бизнес-логики операций     |
 | M3   | 3-4 недели   | Cloud Functions, регулярные операции |
-| M4   | 3-4 недели   | Производительность графиков |
-| M5   | 3-4 недели   | PWA оптимизации, тестирование |
+| M4   | 3-4 недели   | Производительность графиков          |
+| M5   | 3-4 недели   | PWA оптимизации, тестирование        |
 
 **Общая оценка:** 18-24 недели для команды из 2-3 разработчиков
 

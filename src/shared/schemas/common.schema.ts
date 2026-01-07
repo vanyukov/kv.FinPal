@@ -16,7 +16,19 @@ export const PaginationSchema = z.object({
  * @param dataSchema - Zod схема для данных ответа
  * @returns Схема ответа API с типизированными данными
  */
-export const ApiResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
+export const ApiResponseSchema = <T extends z.ZodTypeAny>(
+  dataSchema: T
+): z.ZodObject<{
+  success: z.ZodBoolean;
+  data: z.ZodOptional<T>;
+  error: z.ZodOptional<
+    z.ZodObject<{
+      code: z.ZodString;
+      message: z.ZodString;
+      details: z.ZodOptional<z.ZodUnknown>;
+    }>
+  >;
+}> =>
   z.object({
     success: z.boolean(),
     data: dataSchema.optional(),
@@ -37,5 +49,4 @@ export type Pagination = z.infer<typeof PaginationSchema>;
 /**
  * Тип для ответа API, сгенерированный из Zod схемы.
  */
-export type ApiResponse<T> = z.infer<ReturnType<typeof ApiResponseSchema<T>>>;
-
+export type ApiResponse<T extends z.ZodTypeAny> = z.infer<ReturnType<typeof ApiResponseSchema<T>>>;

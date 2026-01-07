@@ -1,6 +1,6 @@
 /**
- * Управление переменными окружения.
- * Безопасное получение конфигурации для разных окружений.
+ * Мок для модуля env.ts для тестирования.
+ * Используется для обхода проблем с import.meta в Jest.
  */
 export type Environment = 'development' | 'staging' | 'production';
 
@@ -14,10 +14,6 @@ export interface FirebaseConfig {
   measurementId?: string;
 }
 
-/**
- * Получает текущее окружение на основе hostname.
- * @returns Текущее окружение
- */
 export const getCurrentEnvironment = (): Environment => {
   if (typeof window === 'undefined') {
     return 'development';
@@ -36,19 +32,16 @@ export const getCurrentEnvironment = (): Environment => {
   return 'production';
 };
 
-/**
- * Получает конфигурацию Firebase для текущего окружения.
- * @returns Конфигурация Firebase
- */
 export const getFirebaseConfig = (): FirebaseConfig => {
+  // В тестах используем пустые значения
   return {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-    appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-    measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+    apiKey: '',
+    authDomain: '',
+    projectId: '',
+    storageBucket: '',
+    messagingSenderId: '',
+    appId: '',
+    measurementId: undefined,
   };
 };
 
